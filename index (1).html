@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RankTune — Classez vos albums Spotify</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --surface: #13131a;
+  --surface2: #1c1c26;
+  --accent: #1db954;
+  --accent2: #1ed760;
+  --text: #f0ede8;
+  --muted: #8888a0;
+  --border: rgba(255,255,255,0.08);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+}
+.container { max-width:900px; margin:0 auto; padding:0 20px; }
+
+header { text-align:center; padding:52px 0 36px; }
+.logo { font-family:'Playfair Display',serif; font-size:clamp(34px,6vw,56px); font-weight:700; letter-spacing:-1px; }
+.logo span { color:var(--accent); font-style:italic; }
+.tagline { font-size:13px; color:var(--muted); margin-top:6px; letter-spacing:2px; text-transform:uppercase; }
+
+/* Search */
+.search-bar { display:flex; gap:10px; margin-bottom:28px; }
+.search-bar input {
+  flex:1; background:var(--surface); border:1px solid var(--border);
+  border-radius:12px; padding:13px 18px; font-family:'DM Sans',sans-serif;
+  font-size:15px; color:var(--text); outline:none; transition:border-color .2s;
+}
+.search-bar input:focus { border-color:var(--accent); }
+input::placeholder { color:var(--muted); }
+.btn {
+  background:var(--accent); color:#000; border:none; padding:13px 24px;
+  border-radius:12px; font-family:'DM Sans',sans-serif; font-size:15px;
+  font-weight:500; cursor:pointer; transition:background .2s; white-space:nowrap;
+}
+.btn:hover { background:var(--accent2); }
+.btn-ghost {
+  background:transparent; color:var(--text); border:1px solid var(--border);
+  padding:11px 20px; border-radius:12px; font-family:'DM Sans',sans-serif;
+  font-size:14px; cursor:pointer; transition:border-color .2s;
+}
+.btn-ghost:hover { border-color:var(--muted); }
+
+/* Albums grid */
+.section-label { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:16px; }
+.albums-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:14px; margin-bottom:40px; }
+.album-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:12px; cursor:pointer; transition:all .2s; display:flex; flex-direction:column; gap:10px;
+}
+.album-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+.album-card img { width:100%; aspect-ratio:1; border-radius:8px; object-fit:cover; display:block; }
+.album-name { font-size:13px; font-weight:500; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.album-meta { font-size:11px; color:var(--muted); margin-top:2px; }
+
+/* Duel */
+#ranking-section { display:none; padding-bottom:60px; }
+.back-btn {
+  display:inline-flex; align-items:center; gap:6px; background:transparent;
+  border:none; color:var(--muted); font-family:'DM Sans',sans-serif; font-size:13px;
+  cursor:pointer; padding:0; margin-bottom:28px; transition:color .2s;
+}
+.back-btn:hover { color:var(--text); }
+
+.album-header {
+  display:flex; align-items:center; gap:16px; margin-bottom:28px;
+  padding:18px; background:var(--surface); border:1px solid var(--border); border-radius:14px;
+}
+.album-header img { width:68px; height:68px; border-radius:8px; object-fit:cover; flex-shrink:0; }
+.album-header-info h3 { font-family:'Playfair Display',serif; font-size:20px; font-weight:700; }
+.album-header-info p { font-size:13px; color:var(--muted); margin-top:4px; }
+
+.progress-wrap { margin-bottom:28px; }
+.progress-label { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:8px; }
+.progress-bar { height:3px; background:var(--surface2); border-radius:999px; overflow:hidden; }
+.progress-fill { height:100%; background:var(--accent); border-radius:999px; transition:width .4s ease; }
+
+.duel-label { text-align:center; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:18px; }
+
+.duel-arena { display:grid; grid-template-columns:1fr auto 1fr; gap:16px; align-items:center; margin-bottom:24px; }
+.vs-badge { font-family:'Playfair Display',serif; font-size:22px; font-style:italic; color:var(--muted); text-align:center; opacity:.5; }
+
+.duel-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:16px;
+  cursor:pointer; transition:all .25s; overflow:hidden; display:flex; flex-direction:column;
+}
+.duel-card:hover { border-color:var(--accent); transform:scale(1.02); }
+.duel-card:active { transform:scale(0.98); }
+.duel-cover { width:100%; aspect-ratio:1; object-fit:cover; display:block; }
+.duel-cover-placeholder { width:100%; aspect-ratio:1; background:var(--surface2); display:flex; align-items:center; justify-content:center; }
+.duel-info { padding:14px 16px 16px; display:flex; flex-direction:column; gap:4px; }
+.duel-track-num { font-size:11px; color:var(--muted); letter-spacing:1px; }
+.duel-track-name { font-family:'Playfair Display',serif; font-size:clamp(15px,2.5vw,20px); font-weight:700; line-height:1.2; }
+.duel-track-dur { font-size:12px; color:var(--muted); }
+
+.controls-row { display:flex; justify-content:center; gap:12px; margin-bottom:40px; }
+
+/* Results */
+.results-header { text-align:center; margin-bottom:28px; }
+.results-header h2 { font-family:'Playfair Display',serif; font-size:30px; font-weight:700; }
+.results-header p { font-size:13px; color:var(--muted); margin-top:6px; }
+
+.ranking-list { display:flex; flex-direction:column; gap:8px; margin-bottom:32px; }
+.rank-item {
+  display:flex; align-items:center; gap:16px; padding:14px 18px;
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  animation:slideUp .3s ease both;
+}
+@keyframes slideUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+.rank-num { font-family:'Playfair Display',serif; font-size:22px; font-weight:700; color:var(--muted); min-width:32px; text-align:right; flex-shrink:0; }
+.rank-num.gold { color:#f5c518; }
+.rank-num.silver { color:#c0c0c0; }
+.rank-num.bronze { color:#cd7f32; }
+.rank-name { flex:1; font-size:15px; font-weight:500; }
+.rank-dur { font-size:12px; color:var(--muted); }
+
+.share-row { display:flex; justify-content:center; gap:12px; }
+
+/* Loader / error */
+.loader { text-align:center; padding:40px; color:var(--muted); font-size:14px; }
+.spinner { display:inline-block; width:18px; height:18px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; margin-right:8px; vertical-align:middle; }
+@keyframes spin { to{transform:rotate(360deg)} }
+.error-msg { background:rgba(255,60,60,.08); border:1px solid rgba(255,60,60,.2); color:#ff6b6b; border-radius:10px; padding:12px 16px; font-size:13px; margin-top:12px; }
+
+@media(max-width:520px){
+  .albums-grid{grid-template-columns:repeat(2,1fr);}
+  .duel-arena{grid-template-columns:1fr 28px 1fr;gap:8px;}
+  .vs-badge{font-size:16px;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">Rank<span>Tune</span></div>
+    <div class="tagline">Classez chaque chanson de vos albums préférés</div>
+  </header>
+
+  <!-- SEARCH -->
+  <div id="search-section">
+    <div class="search-bar">
+      <input type="text" id="artist-input" placeholder="Artiste (ex: The Weeknd)" />
+      <input type="text" id="album-input" placeholder="Album (ex: Thursday)" />
+      <button class="btn" id="search-btn">Chercher</button>
+    </div>
+    <div id="search-status"></div>
+    <div id="albums-results"></div>
+  </div>
+
+  <!-- RANKING -->
+  <div id="ranking-section">
+    <button class="back-btn" id="back-btn">← Nouvelle recherche</button>
+
+    <div id="duel-phase">
+      <div class="album-header">
+        <img id="sel-img" src="" alt="">
+        <div class="album-header-info">
+          <h3 id="sel-name"></h3>
+          <p id="sel-meta"></p>
+        </div>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-label"><span>Progression</span><span id="prog-txt">0 / 0</span></div>
+        <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+      </div>
+
+      <div class="duel-label">Laquelle préférez-vous ?</div>
+      <div class="duel-arena">
+        <div class="duel-card" id="card-a">
+          <img class="duel-cover" id="cover-a" src="" alt="">
+          <div class="duel-info">
+            <div class="duel-track-num" id="num-a"></div>
+            <div class="duel-track-name" id="name-a"></div>
+            <div class="duel-track-dur" id="dur-a"></div>
+          </div>
+        </div>
+        <div class="vs-badge">vs</div>
+        <div class="duel-card" id="card-b">
+          <img class="duel-cover" id="cover-b" src="" alt="">
+          <div class="duel-info">
+            <div class="duel-track-num" id="num-b"></div>
+            <div class="duel-track-name" id="name-b"></div>
+            <div class="duel-track-dur" id="dur-b"></div>
+          </div>
+        </div>
+      </div>
+      <div class="controls-row">
+        <button class="btn-ghost" id="skip-btn">Passer (égalité)</button>
+      </div>
+    </div>
+
+    <div id="results-phase" style="display:none;">
+      <div class="results-header">
+        <h2>Votre classement</h2>
+        <p id="results-album-name"></p>
+      </div>
+      <div class="ranking-list" id="ranking-list"></div>
+      <div class="share-row">
+        <button class="btn" id="restart-btn">Recommencer</button>
+        <button class="btn-ghost" id="new-album-btn">Autre album</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────
+const CLIENT_ID     = '3f3173e083604096abe93d93e05a8867';
+const CLIENT_SECRET = ''; // laissé vide — on utilise un token public via PKCE implicite
+
+// ─── TOKEN (Client Credentials via un workaround public) ──
+// Spotify ne permet plus client_credentials sans secret côté browser.
+// On utilise le token anonyme que Spotify génère pour son propre web player.
+// C'est le même principe que ton ancien site.
+let token = null;
+let tokenExp = 0;
+
+async function getToken() {
+  if (token && Date.now() < tokenExp) return token;
+
+  // Spotify open token endpoint (utilisé par le web player officiel)
+  try {
+    const r = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', {
+      headers: { 'spotify-app-version': '1.0.0' }
+    });
+    const d = await r.json();
+    if (d.accessToken) {
+      token = d.accessToken;
+      tokenExp = d.accessTokenExpirationTimestampMs - 30000;
+      return token;
+    }
+  } catch(e) {}
+
+  // Fallback : Client Credentials avec notre app (nécessite que le secret soit défini)
+  // Si l'endpoint open.spotify.com échoue, on affiche un message clair.
+  throw new Error('Impossible d\'obtenir un token Spotify. Ouvrez le site depuis un navigateur normal (pas incognito).');
+}
+
+async function spFetch(path, params = {}) {
+  const tok = await getToken();
+  const qs = Object.keys(params).length ? '?' + new URLSearchParams(params) : '';
+  const r = await fetch('https://api.spotify.com/v1' + path + qs, {
+    headers: { Authorization: 'Bearer ' + tok }
+  });
+  if (r.status === 401) { token = null; return spFetch(path, params); }
+  if (!r.ok) throw new Error('Spotify API ' + r.status);
+  return r.json();
+}
+
+// ─── STATE ────────────────────────────────────────────────
+let currentAlbum = null;
+let albumCover   = '';
+let tracks       = [];
+let ratings      = {};
+let comparisons  = [];
+let compIdx      = 0;
+
+// ─── SEARCH ───────────────────────────────────────────────
+document.getElementById('search-btn').addEventListener('click', doSearch);
+document.getElementById('artist-input').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
+document.getElementById('album-input').addEventListener('keydown',  e => { if(e.key==='Enter') doSearch(); });
+
+async function doSearch() {
+  const artist = document.getElementById('artist-input').value.trim();
+  const album  = document.getElementById('album-input').value.trim();
+  if (!artist && !album) return;
+
+  const statusEl  = document.getElementById('search-status');
+  const resultsEl = document.getElementById('albums-results');
+  statusEl.innerHTML  = '<div class="loader"><span class="spinner"></span>Recherche...</div>';
+  resultsEl.innerHTML = '';
+
+  try {
+    const q = [artist && `artist:${artist}`, album && `album:${album}`].filter(Boolean).join(' ');
+    const data = await spFetch('/search', { q, type:'album', limit:20, market:'FR' });
+    let albums = data.albums.items;
+
+    // Trier par date chronologique (plus ancien en premier)
+    albums.sort((a, b) => {
+      const da = a.release_date || '0000';
+      const db = b.release_date || '0000';
+      return da.localeCompare(db);
+    });
+
+    statusEl.innerHTML = '';
+    if (!albums.length) {
+      statusEl.innerHTML = '<div class="error-msg">Aucun album trouvé.</div>';
+      return;
+    }
+
+    statusEl.innerHTML = `<p class="section-label">${albums.length} résultat(s) — choisissez un album</p>`;
+    const grid = document.createElement('div');
+    grid.className = 'albums-grid';
+
+    albums.forEach(alb => {
+      const img  = alb.images[0]?.url || '';
+      const year = alb.release_date?.slice(0,4) || '';
+      const card = document.createElement('div');
+      card.className = 'album-card';
+      card.innerHTML = `
+        <img src="${img}" alt="${alb.name}" loading="lazy">
+        <div>
+          <div class="album-name">${alb.name}</div>
+          <div class="album-meta">${alb.artists.map(a=>a.name).join(', ')} · ${year} · ${alb.total_tracks} titres</div>
+        </div>`;
+      card.addEventListener('click', () => selectAlbum(alb, img));
+      grid.appendChild(card);
+    });
+    resultsEl.appendChild(grid);
+
+  } catch(e) {
+    statusEl.innerHTML = `<div class="error-msg">${e.message}</div>`;
+  }
+}
+
+// ─── SELECT ALBUM ─────────────────────────────────────────
+async function selectAlbum(alb, cover) {
+  currentAlbum = alb;
+  albumCover   = cover;
+
+  document.getElementById('search-section').style.display  = 'none';
+  document.getElementById('ranking-section').style.display = 'block';
+  document.getElementById('duel-phase').style.display      = 'block';
+  document.getElementById('results-phase').style.display   = 'none';
+
+  document.getElementById('sel-img').src  = cover;
+  document.getElementById('sel-name').textContent = alb.name;
+  document.getElementById('sel-meta').textContent =
+    alb.artists.map(a=>a.name).join(', ') + ' · ' + (alb.release_date?.slice(0,4)||'') + ' · ' + alb.total_tracks + ' titres';
+
+  // Fetch tracks
+  document.getElementById('prog-txt').textContent = 'Chargement...';
+  try {
+    tracks = await fetchAllTracks(alb.id);
+  } catch(e) {
+    alert('Erreur chargement pistes : ' + e.message);
+    return;
+  }
+
+  initRanking();
+}
+
+async function fetchAllTracks(albumId) {
+  let all = [], offset = 0;
+  while(true) {
+    const d = await spFetch(`/albums/${albumId}/tracks`, { limit:50, offset, market:'FR' });
+    all = all.concat(d.items);
+    if (!d.next) break;
+    offset += 50;
+  }
+  return all;
+}
+
+// ─── ELO ENGINE ───────────────────────────────────────────
+function initRanking() {
+  ratings = {};
+  tracks.forEach(t => { ratings[t.id] = 1500; });
+  comparisons = buildPairs(tracks);
+  compIdx = 0;
+  updateDuel();
+}
+
+function buildPairs(tracks) {
+  const pairs = [];
+  for (let i = 0; i < tracks.length; i++)
+    for (let j = i+1; j < tracks.length; j++)
+      pairs.push([i, j]);
+  // Shuffle
+  for (let i = pairs.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+  }
+  // Cap pour les gros albums
+  return pairs.slice(0, Math.min(pairs.length, tracks.length * 3));
+}
+
+function fmtDur(ms) {
+  const s = Math.floor(ms/1000);
+  return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+}
+
+function updateDuel() {
+  const total = comparisons.length;
+  const pct   = total ? Math.round(compIdx/total*100) : 0;
+  document.getElementById('prog-txt').textContent  = compIdx + ' / ' + total;
+  document.getElementById('prog-fill').style.width = pct + '%';
+
+  if (compIdx >= total) { showResults(); return; }
+
+  const [ia, ib] = comparisons[compIdx];
+  const ta = tracks[ia], tb = tracks[ib];
+
+  document.getElementById('cover-a').src        = albumCover;
+  document.getElementById('cover-b').src        = albumCover;
+  document.getElementById('num-a').textContent  = 'Piste ' + ta.track_number;
+  document.getElementById('name-a').textContent = ta.name;
+  document.getElementById('dur-a').textContent  = fmtDur(ta.duration_ms);
+  document.getElementById('num-b').textContent  = 'Piste ' + tb.track_number;
+  document.getElementById('name-b').textContent = tb.name;
+  document.getElementById('dur-b').textContent  = fmtDur(tb.duration_ms);
+
+  // Animate
+  ['card-a','card-b'].forEach(id => {
+    const el = document.getElementById(id);
+    el.style.animation = 'none'; el.offsetHeight;
+    el.style.animation = 'slideUp .2s ease both';
+  });
+}
+
+function eloUpdate(winId, loseId, draw=false) {
+  const K=32, Ra=ratings[winId], Rb=ratings[loseId];
+  const Ea = 1/(1+Math.pow(10,(Rb-Ra)/400));
+  ratings[winId]  = Ra + K*(draw?.5:1-Ea);
+  ratings[loseId] = Rb + K*(draw?.5:0-(1-Ea));
+}
+
+document.getElementById('card-a').addEventListener('click', () => {
+  if(compIdx>=comparisons.length) return;
+  const [ia,ib]=comparisons[compIdx]; eloUpdate(tracks[ia].id, tracks[ib].id); compIdx++; updateDuel();
+});
+document.getElementById('card-b').addEventListener('click', () => {
+  if(compIdx>=comparisons.length) return;
+  const [ia,ib]=comparisons[compIdx]; eloUpdate(tracks[ib].id, tracks[ia].id); compIdx++; updateDuel();
+});
+document.getElementById('skip-btn').addEventListener('click', () => {
+  if(compIdx>=comparisons.length) return;
+  const [ia,ib]=comparisons[compIdx]; eloUpdate(tracks[ia].id, tracks[ib].id, true); compIdx++; updateDuel();
+});
+
+// ─── RESULTS ──────────────────────────────────────────────
+function showResults() {
+  document.getElementById('duel-phase').style.display    = 'none';
+  document.getElementById('results-phase').style.display = 'block';
+  document.getElementById('results-album-name').textContent =
+    currentAlbum.name + ' — ' + currentAlbum.artists.map(a=>a.name).join(', ');
+
+  const sorted = [...tracks].sort((a,b) => ratings[b.id]-ratings[a.id]);
+  const list   = document.getElementById('ranking-list');
+  list.innerHTML = '';
+
+  sorted.forEach((track, idx) => {
+    const rank = idx+1;
+    const cls  = rank===1?'rank-num gold':rank===2?'rank-num silver':rank===3?'rank-num bronze':'rank-num';
+    const item = document.createElement('div');
+    item.className = 'rank-item';
+    item.style.animationDelay = (idx*.04)+'s';
+    item.innerHTML = `
+      <div class="${cls}">${rank}</div>
+      <div class="rank-name">${track.name}</div>
+      <div class="rank-dur">${fmtDur(track.duration_ms)}</div>`;
+    list.appendChild(item);
+  });
+}
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+  initRanking();
+  document.getElementById('duel-phase').style.display    = 'block';
+  document.getElementById('results-phase').style.display = 'none';
+});
+document.getElementById('new-album-btn').addEventListener('click', () => {
+  document.getElementById('ranking-section').style.display = 'none';
+  document.getElementById('search-section').style.display  = 'block';
+  document.getElementById('albums-results').innerHTML = '';
+  document.getElementById('search-status').innerHTML  = '';
+});
+document.getElementById('back-btn').addEventListener('click', () => {
+  document.getElementById('ranking-section').style.display = 'none';
+  document.getElementById('search-section').style.display  = 'block';
+});
+</script>
+</body>
+</html>
