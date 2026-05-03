@@ -656,10 +656,25 @@ async function getPreviewUrl(track) {
         h.track?.subtitle?.toLowerCase().includes(artistName.toLowerCase())
       ) || hits.find(h =>
         h.track?.title?.toLowerCase() === trackName
-      );
-      const preview = match?.track?.hub?.actions?.find(a => a.name === 'preview')?.uri
-        || match?.track?.hub?.options?.[0]?.actions?.find(a => a.type === 'uri')?.uri;
-      if (preview) return preview;
+      ) || hits[0];
+
+      if (match?.track) {
+        const t = match.track;
+        // Chercher le preview dans toutes les structures possibles
+        const allActions = [
+          ...(t.hub?.actions || []),
+          ...(t.hub?.options?.flatMap(o => o.actions || []) || []),
+        ];
+        const previewAction = allActions.find(a => a.name === 'preview' || (a.uri && a.uri.includes('.m4a')) || (a.uri && a.uri.includes('.mp3')));
+        if (previewAction?.uri) return previewAction.uri;
+
+        // Chercher dans sections
+        const sections = t.sections || [];
+        for (const sec of sections) {
+          const url = sec.url || sec.youtubeurl?.actions?.[0]?.uri;
+          if (url && (url.includes('.m4a') || url.includes('.mp3'))) return url;
+        }
+      }
     }
   } catch(e) {}
 
