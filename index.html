@@ -678,6 +678,21 @@ async function getPreviewUrl(track) {
     }
   } catch(e) {}
 
+  // 4. Fallback Deezer — API publique, pas de clé requise
+  try {
+    const q = encodeURIComponent(artistName + ' ' + track.name);
+    const r = await fetch(`https://api.deezer.com/search?q=${q}&limit=10`);
+    const d = await r.json();
+    const match = d.data?.find(t =>
+      t.title?.toLowerCase() === trackName &&
+      t.artist?.name?.toLowerCase().includes(artistName.toLowerCase()) &&
+      t.preview
+    ) || d.data?.find(t =>
+      t.title?.toLowerCase() === trackName && t.preview
+    );
+    if (match?.preview) return match.preview;
+  } catch(e) {}
+
   return null;
 }
 
