@@ -112,6 +112,17 @@ input::placeholder { color:var(--muted); }
 .duel-track-name { font-family:'Playfair Display',serif; font-size:clamp(14px,2.5vw,20px); font-weight:700; line-height:1.2; }
 .duel-track-dur { font-size:12px; color:var(--muted); }
 
+.preview-btn {
+  display:inline-flex; align-items:center; gap:6px;
+  background:transparent; border:1px solid var(--border);
+  border-radius:20px; padding:5px 12px; margin-top:6px;
+  font-family:'DM Sans',sans-serif; font-size:12px; color:var(--muted);
+  cursor:pointer; transition:all .2s; width:fit-content;
+}
+.preview-btn:hover { border-color:var(--accent); color:var(--accent); }
+.preview-btn.playing { border-color:var(--accent); color:var(--accent); background:rgba(29,185,84,0.1); }
+.preview-btn.unavailable { opacity:0.3; cursor:not-allowed; }
+
 .controls-row { display:flex; justify-content:center; gap:12px; margin-bottom:40px; }
 
 .results-header { text-align:center; margin-bottom:28px; }
@@ -154,7 +165,7 @@ input::placeholder { color:var(--muted); }
 
   <div id="search-section">
     <div class="search-bar">
-      <input type="text" id="artist-input" placeholder="Artist Name" />
+      <input type="text" id="artist-input" placeholder="Artist Name / Link" />
       <input type="text" id="album-input" placeholder="Album Name" />
       <button class="btn" id="search-btn">Search</button>
     </div>
@@ -192,6 +203,7 @@ input::placeholder { color:var(--muted); }
             <div class="duel-track-num" id="num-a"></div>
             <div class="duel-track-name" id="name-a"></div>
             <div class="duel-track-dur" id="dur-a"></div>
+            <button class="preview-btn" id="preview-a" onclick="togglePreview('a', event)">▶ Écouter</button>
           </div>
         </div>
         <div class="vs-badge">vs</div>
@@ -201,6 +213,7 @@ input::placeholder { color:var(--muted); }
             <div class="duel-track-num" id="num-b"></div>
             <div class="duel-track-name" id="name-b"></div>
             <div class="duel-track-dur" id="dur-b"></div>
+            <button class="preview-btn" id="preview-b" onclick="togglePreview('b', event)">▶ Écouter</button>
           </div>
         </div>
       </div>
@@ -303,11 +316,11 @@ async function loadPlaylist(playlistId) {
   const statusEl  = document.getElementById('search-status');
   const resultsEl = document.getElementById('albums-results');
   try {
-    const pl = await spFetch(`/playlists/${playlistId}`, { market:'FR' });
+    const pl = await spFetch(`/playlists/${playlistId}`);
     // Récupérer toutes les pistes
     let items = [], offset = 0;
     while (true) {
-      const d = await spFetch(`/playlists/${playlistId}/tracks`, { limit:50, offset, market:'FR' });
+      const d = await spFetch(`/playlists/${playlistId}/tracks`, { limit:50, offset });
       items = items.concat(d.items);
       if (!d.next) break;
       offset += 50;
@@ -369,7 +382,7 @@ async function doSearch() {
 
     // Seulement un nom d'album (champ artiste vide)
     if (!artistQuery && albumQuery) {
-      const data = await spFetch('/search', { q: `"${albumQuery}"`, type:'album', limit:50, market:'FR' });
+      const data = await spFetch('/search', { q: `"${albumQuery}"`, type:'album', limit:50 });
       let albums = data.albums.items;
       // Filtre strict : nom exact (insensible à la casse)
       const q = albumQuery.toLowerCase();
@@ -460,41 +473,52 @@ async function loadArtistAlbums(artist, albumFilter = '') {
   const resultsEl = document.getElementById('albums-results');
 
   try {
-    let albums = [], eps = [], singles = [];
+    let albums = [], deluxe = [], eps = [], singles = [];
     const seen = new Set();
+    const seenDeluxe = new Set();
 
-    // Albums + EPs + compilations (on les sépare après par album_type)
+    function normalizeAlbumName(name) {
+      return name.toLowerCase()
+        .replace(/\(.*?\)/g, '')
+        .replace(/\[.*?\]/g, '')
+        .replace(/deluxe|remastered|edition|version|bonus/gi, '')
+        .trim();
+    }
+
+    function isDeluxe(name) {
+      return /deluxe|remastered|edition|bonus|extended/i.test(name);
+    }
+
+    // Albums + EPs + compilations
     let offsetA = 0;
     while (true) {
       const d = await spFetch(`/artists/${artist.id}/albums`, {
-        include_groups: 'album,compilation', limit:50, offset:offsetA, market:'FR'
+        include_groups: 'album,compilation', limit:50, offset:offsetA
       });
       for (const alb of d.items) {
-        const key = alb.name.toLowerCase() + '|' + alb.release_date;
-        if (!seen.has(key)) {
-          seen.add(key);
-          if (alb.album_type === 'single' || (alb.total_tracks <= 6 && alb.album_type !== 'album')) {
-            eps.push(alb);
-          } else {
-            albums.push(alb);
-          }
+        const key = normalizeAlbumName(alb.name);
+        if (alb.album_type === 'single' || (alb.total_tracks <= 6 && alb.album_type !== 'album')) {
+          if (!seen.has(key)) { seen.add(key); eps.push(alb); }
+        } else if (isDeluxe(alb.name)) {
+          if (!seenDeluxe.has(key)) { seenDeluxe.add(key); deluxe.push(alb); }
+        } else {
+          if (!seen.has(key)) { seen.add(key); albums.push(alb); }
         }
       }
       offsetA += 50;
       if (!d.next) break;
     }
 
-    // Singles séparément
+    // Singles
     let offsetS = 0;
     while (true) {
       const d = await spFetch(`/artists/${artist.id}/albums`, {
-        include_groups: 'single', limit:50, offset:offsetS, market:'FR'
+        include_groups: 'single', limit:50, offset:offsetS
       });
       for (const alb of d.items) {
-        const key = alb.name.toLowerCase() + '|' + alb.release_date;
+        const key = normalizeAlbumName(alb.name);
         if (!seen.has(key)) {
           seen.add(key);
-          // EPs dans les singles : plus de 2 titres
           if (alb.total_tracks > 2) eps.push(alb);
           else singles.push(alb);
         }
@@ -507,17 +531,17 @@ async function loadArtistAlbums(artist, albumFilter = '') {
     if (albumFilter) {
       const f = albumFilter.toLowerCase();
       albums  = albums.filter(a => a.name.toLowerCase().includes(f));
+      deluxe  = deluxe.filter(a => a.name.toLowerCase().includes(f));
       eps     = eps.filter(a => a.name.toLowerCase().includes(f));
       singles = singles.filter(a => a.name.toLowerCase().includes(f));
     }
 
-    // Tri chronologique dans chaque groupe
-    [albums, eps, singles].forEach(arr => arr.sort((a,b) => (a.release_date||'').localeCompare(b.release_date||'')));
+    [albums, deluxe, eps, singles].forEach(arr => arr.sort((a,b) => (a.release_date||'').localeCompare(b.release_date||'')));
 
     statusEl.innerHTML = '';
     resultsEl.innerHTML = '';
 
-    if (!albums.length && !eps.length && !singles.length) {
+    if (!albums.length && !deluxe.length && !eps.length && !singles.length) {
       statusEl.innerHTML = '<div class="error-msg">Aucun album trouvé pour cet artiste.</div>';
       return;
     }
@@ -546,6 +570,7 @@ async function loadArtistAlbums(artist, albumFilter = '') {
     }
 
     renderGroup('Albums', albums);
+    renderGroup('Deluxe & Remastered', deluxe);
     renderGroup('EPs & Mixtapes', eps);
     renderGroup('Singles', singles);
 
@@ -577,12 +602,77 @@ async function selectAlbum(alb, cover) {
 async function fetchAllTracks(albumId) {
   let all = [], offset = 0;
   while (true) {
-    const d = await spFetch(`/albums/${albumId}/tracks`, { limit:50, offset, market:'FR' });
+    const d = await spFetch(`/albums/${albumId}/tracks`, { limit:50, offset });
     all = all.concat(d.items);
     if (!d.next) break;
     offset += 50;
   }
   return all;
+}
+
+// Audio preview
+let currentAudio = null;
+let previewUrls = { a: null, b: null };
+
+async function getPreviewUrl(track) {
+  // 1. Spotify preview
+  if (track.preview_url) return track.preview_url;
+
+  // 2. Fallback iTunes
+  try {
+    const artistName = currentAlbum?.artists?.[0]?.name || '';
+    const q = encodeURIComponent(artistName + ' ' + track.name);
+    const r = await fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=5`);
+    const d = await r.json();
+    // Cherche le meilleur match par nom de titre
+    const match = d.results?.find(t =>
+      t.trackName?.toLowerCase() === track.name.toLowerCase() && t.previewUrl
+    ) || d.results?.find(t => t.previewUrl);
+    if (match?.previewUrl) return match.previewUrl;
+  } catch(e) {}
+
+  return null;
+}
+
+async function togglePreview(side, e) {
+  e.stopPropagation(); // ne pas déclencher le vote
+  const btn = document.getElementById('preview-' + side);
+  if (btn.classList.contains('unavailable')) return;
+
+  // Si déjà en lecture sur ce bouton → stop
+  if (btn.classList.contains('playing')) {
+    currentAudio.pause();
+    currentAudio = null;
+    btn.textContent = '▶ Écouter';
+    btn.classList.remove('playing');
+    return;
+  }
+
+  // Arrêter tout audio en cours
+  stopAllPreviews();
+
+  const url = previewUrls[side];
+  if (!url) return;
+
+  currentAudio = new Audio(url);
+  currentAudio.volume = 0.8;
+  currentAudio.play();
+  btn.textContent = '⏸ Stop';
+  btn.classList.add('playing');
+
+  currentAudio.onended = () => {
+    btn.textContent = '▶ Écouter';
+    btn.classList.remove('playing');
+    currentAudio = null;
+  };
+}
+
+function stopAllPreviews() {
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  ['a','b'].forEach(s => {
+    const btn = document.getElementById('preview-' + s);
+    if (btn) { btn.textContent = '▶ Écouter'; btn.classList.remove('playing'); }
+  });
 }
 
 function initRanking() {
@@ -616,6 +706,9 @@ function updateDuel() {
   document.getElementById('prog-fill').style.width = (total ? Math.round(compIdx/total*100) : 0) + '%';
   if (compIdx >= total) { showResults(); return; }
 
+  stopAllPreviews();
+  previewUrls = { a: null, b: null };
+
   const [ia, ib] = comparisons[compIdx];
   const ta = tracks[ia], tb = tracks[ib];
 
@@ -627,6 +720,25 @@ function updateDuel() {
   document.getElementById('num-b').textContent  = 'Piste ' + tb.track_number;
   document.getElementById('name-b').textContent = tb.name;
   document.getElementById('dur-b').textContent  = fmtDur(tb.duration_ms);
+
+  // Reset preview buttons
+  ['a','b'].forEach(s => {
+    const btn = document.getElementById('preview-' + s);
+    btn.textContent = '▶ Écouter';
+    btn.classList.remove('playing', 'unavailable');
+  });
+
+  // Charger les previews en arrière-plan
+  getPreviewUrl(ta).then(url => {
+    previewUrls.a = url;
+    const btn = document.getElementById('preview-a');
+    if (!url) { btn.textContent = '🚫 Pas de preview'; btn.classList.add('unavailable'); }
+  });
+  getPreviewUrl(tb).then(url => {
+    previewUrls.b = url;
+    const btn = document.getElementById('preview-b');
+    if (!url) { btn.textContent = '🚫 Pas de preview'; btn.classList.add('unavailable'); }
+  });
 
   ['card-a','card-b'].forEach(id => {
     const el = document.getElementById(id);
@@ -644,14 +756,17 @@ function eloUpdate(winId, loseId, draw=false) {
 
 document.getElementById('card-a').addEventListener('click', () => {
   if(compIdx>=comparisons.length) return;
+  stopAllPreviews();
   const [ia,ib]=comparisons[compIdx]; eloUpdate(tracks[ia].id,tracks[ib].id); compIdx++; updateDuel();
 });
 document.getElementById('card-b').addEventListener('click', () => {
   if(compIdx>=comparisons.length) return;
+  stopAllPreviews();
   const [ia,ib]=comparisons[compIdx]; eloUpdate(tracks[ib].id,tracks[ia].id); compIdx++; updateDuel();
 });
 document.getElementById('skip-btn').addEventListener('click', () => {
   if(compIdx>=comparisons.length) return;
+  stopAllPreviews();
   const [ia,ib]=comparisons[compIdx]; eloUpdate(tracks[ia].id,tracks[ib].id,true); compIdx++; updateDuel();
 });
 
