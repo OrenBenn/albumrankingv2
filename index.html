@@ -912,25 +912,22 @@ document.getElementById('reco-btn').addEventListener('click', async () => {
 
   try {
     const artistId = currentAlbum?.artists?.[0]?.id;
-    const artistName = currentAlbum?.artists?.[0]?.name || '';
-    let genres = [];
 
-    // 1. Récupérer les genres de l'artiste depuis Spotify
+    // 1. Récupérer les artistes liés via Spotify related-artists
+    let relatedArtists = [];
     if (artistId) {
       try {
-        const artistData = await spFetch(`/artists/${artistId}`);
-        genres = artistData.genres || [];
+        const data = await spFetch(`/artists/${artistId}/related-artists`);
+        relatedArtists = data.artists || [];
       } catch(e) {}
     }
 
     list.innerHTML = '';
 
-    if (genres.length) {
-      // 2a. On a des genres → chercher des sons de ces genres
-      await loadRecoFromGenres(genres, artistName, list);
+    if (relatedArtists.length) {
+      await loadRecoFromRelatedArtists(relatedArtists, list);
     } else {
-      // 2b. Pas de genres → proposer le sélecteur manuel
-      showGenrePicker(list, artistName);
+      showGenrePicker(list, currentAlbum?.artists?.[0]?.name || '');
     }
 
   } catch(e) {
@@ -941,28 +938,17 @@ document.getElementById('reco-btn').addEventListener('click', async () => {
   }
 });
 
-async function loadRecoFromGenres(genres, artistName, list) {
+async function loadRecoFromRelatedArtists(relatedArtists, list) {
   const seen = new Set();
   const recommendations = [];
 
-  // Prendre les 3 premiers genres et chercher des sons pour chacun
-  for (const genre of genres.slice(0, 3)) {
+  // Prendre les 8 artistes les plus liés et récupérer leurs top tracks
+  for (const artist of relatedArtists.slice(0, 8)) {
     try {
-      const data = await spFetch('/search', {
-        q: `genre:"${genre}"`,
-        type: 'track',
-        limit: 15
-      });
-      for (const track of data.tracks?.items || []) {
-        // Exclure les sons du même artiste
-        const isCurrentArtist = track.artists.some(a =>
-          a.name.toLowerCase() === artistName.toLowerCase()
-        );
-        if (isCurrentArtist) continue;
-
-        const key = track.id;
-        if (!seen.has(key)) {
-          seen.add(key);
+      const topTracks = await spFetch(`/artists/${artist.id}/top-tracks`);
+      for (const track of (topTracks.tracks || []).slice(0, 3)) {
+        if (!seen.has(track.id)) {
+          seen.add(track.id);
           recommendations.push({
             name: track.name,
             artist: track.artists.map(a => a.name).join(', '),
@@ -975,16 +961,12 @@ async function loadRecoFromGenres(genres, artistName, list) {
   }
 
   if (!recommendations.length) {
-    showGenrePicker(list, artistName);
+    showGenrePicker(list, currentAlbum?.artists?.[0]?.name || '');
     return;
   }
 
   // Mélanger
   recommendations.sort(() => Math.random() - 0.5);
-
-  // Afficher les genres trouvés
-  const genreLabel = genres.slice(0, 3).join(' · ');
-  list.innerHTML = `<p style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:16px;">Basé sur : ${genreLabel}</p>`;
   renderRecoCards(recommendations.slice(0, 20), list);
 }
 
