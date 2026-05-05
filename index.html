@@ -914,52 +914,20 @@ document.getElementById('reco-btn').addEventListener('click', async () => {
     const LASTFM_KEY = '58fd138490dfe009592d827f5ae299f1';
     const artistName = currentAlbum?.artists?.[0]?.name || '';
 
-    // Prendre les 3 meilleurs sons du classement
-    const top3 = [...tracks]
-      .sort((a,b) => ratings[b.id] - ratings[a.id])
-      .slice(0, 3);
+    // 1. Chercher artistes similaires via Last.fm
+    const r = await fetch(
+      `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(artistName)}&api_key=${LASTFM_KEY}&limit=8&format=json`
+    );
+    const d = await r.json();
+    const similarArtists = d.similarartists?.artist || [];
 
-    // Pour chaque top son, récupérer des sons similaires via Last.fm
-    const seen = new Set();
-    const recommendations = [];
-
-    for (const track of top3) {
-      try {
-        const r = await fetch(
-          `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(artistName)}&track=${encodeURIComponent(track.name)}&api_key=${LASTFM_KEY}&limit=10&format=json`
-        );
-        const d = await r.json();
-        const similar = d.similartracks?.track || [];
-        for (const t of similar) {
-          const key = t.name.toLowerCase() + '|' + t.artist?.name?.toLowerCase();
-          if (!seen.has(key)) {
-            seen.add(key);
-            recommendations.push({ name: t.name, artist: t.artist?.name, url: t.url });
-          }
-        }
-      } catch(e) {}
+    if (similarArtists.length) {
+      // Last.fm a trouvé → on récupère leurs top tracks Spotify
+      await showRecoFromArtists(similarArtists, list);
+    } else {
+      // Last.fm n'a rien → on propose de choisir un genre
+      showGenrePicker(list, artistName);
     }
-
-    list.innerHTML = '';
-
-    if (!recommendations.length) {
-      list.innerHTML = '<div class="error-msg">Aucune recommandation trouvée pour ces sons.</div>';
-      return;
-    }
-
-    // Afficher les 20 premiers
-    recommendations.slice(0, 20).forEach((track, idx) => {
-      const item = document.createElement('div');
-      item.className = 'reco-card';
-      item.style.animationDelay = (idx * .04) + 's';
-      item.innerHTML = `
-        <div class="reco-info">
-          <div class="reco-name">${track.name}</div>
-          <div class="reco-artist">${track.artist}</div>
-        </div>
-        <button class="reco-open" onclick="window.open('https://open.spotify.com/search/${encodeURIComponent(track.name + ' ' + track.artist)}', '_blank')">▶ Ouvrir</button>`;
-      list.appendChild(item);
-    });
 
   } catch(e) {
     list.innerHTML = `<div class="error-msg">Erreur : ${e.message}</div>`;
@@ -968,6 +936,119 @@ document.getElementById('reco-btn').addEventListener('click', async () => {
     btn.disabled = false;
   }
 });
+
+async function showRecoFromArtists(similarArtists, list) {
+  const seen = new Set();
+  const recommendations = [];
+
+  for (const artist of similarArtists.slice(0, 6)) {
+    try {
+      const search = await spFetch('/search', { q: artist.name, type: 'artist', limit: 1 });
+      const spArtist = search.artists?.items?.[0];
+      if (!spArtist) continue;
+      const topTracks = await spFetch(`/artists/${spArtist.id}/top-tracks`);
+      for (const track of (topTracks.tracks || []).slice(0, 3)) {
+        const key = track.name.toLowerCase() + '|' + spArtist.name.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          recommendations.push({
+            name: track.name,
+            artist: track.artists.map(a => a.name).join(', '),
+            cover: track.album?.images[0]?.url || '',
+            url: track.external_urls?.spotify
+          });
+        }
+      }
+    } catch(e) {}
+  }
+
+  list.innerHTML = '';
+  if (!recommendations.length) {
+    showGenrePicker(list, '');
+    return;
+  }
+
+  recommendations.sort(() => Math.random() - 0.5);
+  renderRecoCards(recommendations.slice(0, 20), list);
+}
+
+function showGenrePicker(list, artistName) {
+  const genres = [
+    { label: '🇮🇱 Hip-hop israélien', query: 'israeli hip hop' },
+    { label: '🇮🇱 Pop israélienne', query: 'israeli pop' },
+    { label: '🇮🇱 Rap israélien', query: 'israeli rap' },
+    { label: '🇮🇱 R&B israélien', query: 'israeli rnb' },
+    { label: '🎤 Hip-hop', query: 'hip hop' },
+    { label: '🎵 Pop', query: 'pop' },
+    { label: '🎸 R&B', query: 'rnb soul' },
+    { label: '🌙 Trap', query: 'trap' },
+    { label: '🎹 Electronic', query: 'electronic' },
+    { label: '🎷 Jazz', query: 'jazz' },
+  ];
+
+  list.innerHTML = `
+    <div style="text-align:center;padding:20px 0 16px;">
+      <p style="font-size:14px;color:var(--text);margin-bottom:6px;">On n'a pas trouvé d'artistes similaires${artistName ? ' à <strong>' + artistName + '</strong>' : ''}.</p>
+      <p style="font-size:13px;color:var(--muted);">Quel genre tu écoutes ?</p>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:20px;">
+      ${genres.map(g => `
+        <button class="btn-ghost" style="border-radius:20px;padding:8px 16px;font-size:13px;" onclick="loadGenreReco('${g.query}', this)">
+          ${g.label}
+        </button>
+      `).join('')}
+    </div>
+    <div id="genre-reco-list"></div>`;
+}
+
+async function loadGenreReco(query, btnEl) {
+  // Highlight le bouton sélectionné
+  btnEl.parentElement.querySelectorAll('button').forEach(b => b.style.borderColor = '');
+  btnEl.style.borderColor = 'var(--accent)';
+  btnEl.style.color = 'var(--accent)';
+
+  const genreList = document.getElementById('genre-reco-list');
+  genreList.innerHTML = '<div class="loader"><span class="spinner"></span>Chargement...</div>';
+
+  try {
+    const data = await spFetch('/search', { q: query, type: 'track', limit: 20 });
+    const tracks = data.tracks?.items || [];
+
+    genreList.innerHTML = '';
+    if (!tracks.length) {
+      genreList.innerHTML = '<div class="error-msg">Aucun résultat.</div>';
+      return;
+    }
+
+    // Mélanger
+    tracks.sort(() => Math.random() - 0.5);
+    renderRecoCards(tracks.map(t => ({
+      name: t.name,
+      artist: t.artists.map(a => a.name).join(', '),
+      cover: t.album?.images[0]?.url || '',
+      url: t.external_urls?.spotify
+    })), genreList);
+
+  } catch(e) {
+    genreList.innerHTML = `<div class="error-msg">Erreur : ${e.message}</div>`;
+  }
+}
+
+function renderRecoCards(recommendations, container) {
+  recommendations.forEach((track, idx) => {
+    const item = document.createElement('div');
+    item.className = 'reco-card';
+    item.style.animationDelay = (idx * .04) + 's';
+    item.innerHTML = `
+      <img class="reco-cover" src="${track.cover}" alt="${track.name}">
+      <div class="reco-info">
+        <div class="reco-name">${track.name}</div>
+        <div class="reco-artist">${track.artist}</div>
+      </div>
+      <button class="reco-open" onclick="window.open('${track.url}', '_blank')">▶ Ouvrir</button>`;
+    container.appendChild(item);
+  });
+}
 </script>
 </body>
 </html>
