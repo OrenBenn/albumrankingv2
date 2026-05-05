@@ -143,7 +143,23 @@ input::placeholder { color:var(--muted); }
 .rank-name { flex:1; font-size:15px; font-weight:500; }
 .rank-dur { font-size:12px; color:var(--muted); }
 
-.share-row { display:flex; justify-content:center; gap:12px; }
+.share-row { display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+
+.reco-card {
+  display:flex; align-items:center; gap:14px; padding:12px 16px;
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  animation:slideUp .3s ease both;
+}
+.reco-cover { width:52px; height:52px; border-radius:8px; object-fit:cover; flex-shrink:0; }
+.reco-info { flex:1; }
+.reco-name { font-size:14px; font-weight:500; }
+.reco-artist { font-size:12px; color:var(--muted); margin-top:2px; }
+.reco-open {
+  background:var(--accent); color:#000; border:none; padding:7px 14px;
+  border-radius:20px; font-family:'DM Sans',sans-serif; font-size:12px;
+  font-weight:500; cursor:pointer; transition:background .2s; white-space:nowrap; flex-shrink:0;
+}
+.reco-open:hover { background:var(--accent2); }
 
 .loader { text-align:center; padding:40px; color:var(--muted); font-size:14px; }
 .spinner { display:inline-block; width:18px; height:18px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; margin-right:8px; vertical-align:middle; }
@@ -231,6 +247,16 @@ input::placeholder { color:var(--muted); }
       <div class="share-row">
         <button class="btn" id="restart-btn">Recommencer</button>
         <button class="btn-ghost" id="new-album-btn">Autre album</button>
+        <button class="btn" id="reco-btn">✨ Playlist similaire</button>
+      </div>
+      <div id="reco-section" style="display:none; margin-top:40px;">
+        <div class="group-separator">
+          <div class="group-separator-line"></div>
+          <div class="group-separator-label">Sons qui vous correspondent</div>
+          <div class="group-separator-line"></div>
+        </div>
+        <p style="font-size:13px;color:var(--muted);text-align:center;margin-bottom:20px;">Basé sur vos 5 chansons préférées</p>
+        <div id="reco-list" class="ranking-list"></div>
       </div>
     </div>
   </div>
@@ -872,6 +898,58 @@ document.getElementById('new-album-btn').addEventListener('click', () => {
 document.getElementById('back-btn').addEventListener('click', () => {
   document.getElementById('ranking-section').style.display = 'none';
   document.getElementById('search-section').style.display  = 'block';
+});
+
+document.getElementById('reco-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('reco-btn');
+  const section = document.getElementById('reco-section');
+  const list = document.getElementById('reco-list');
+
+  btn.textContent = '⏳ Chargement...';
+  btn.disabled = true;
+  section.style.display = 'block';
+  list.innerHTML = '<div class="loader"><span class="spinner"></span>Recherche de sons similaires...</div>';
+
+  try {
+    // Prendre les 5 meilleurs sons du classement
+    const top5 = [...tracks]
+      .sort((a,b) => ratings[b.id] - ratings[a.id])
+      .slice(0, 5)
+      .map(t => t.id)
+      .filter(Boolean);
+
+    const data = await spFetch('/recommendations', {
+      seed_tracks: top5.join(','),
+      limit: 20
+    });
+
+    list.innerHTML = '';
+    if (!data.tracks?.length) {
+      list.innerHTML = '<div class="error-msg">Aucune recommandation trouvée.</div>';
+      return;
+    }
+
+    data.tracks.forEach((track, idx) => {
+      const cover = track.album?.images[0]?.url || '';
+      const item = document.createElement('div');
+      item.className = 'reco-card';
+      item.style.animationDelay = (idx * .04) + 's';
+      item.innerHTML = `
+        <img class="reco-cover" src="${cover}" alt="${track.name}">
+        <div class="reco-info">
+          <div class="reco-name">${track.name}</div>
+          <div class="reco-artist">${track.artists.map(a=>a.name).join(', ')} · ${track.album?.name}</div>
+        </div>
+        <button class="reco-open" onclick="window.open('${track.external_urls?.spotify}', '_blank')">▶ Ouvrir</button>`;
+      list.appendChild(item);
+    });
+
+  } catch(e) {
+    list.innerHTML = `<div class="error-msg">Erreur : ${e.message}</div>`;
+  } finally {
+    btn.textContent = '✨ Playlist similaire';
+    btn.disabled = false;
+  }
 });
 </script>
 </body>
