@@ -911,36 +911,53 @@ document.getElementById('reco-btn').addEventListener('click', async () => {
   list.innerHTML = '<div class="loader"><span class="spinner"></span>Recherche de sons similaires...</div>';
 
   try {
-    // Prendre les 5 meilleurs sons du classement
-    const top5 = [...tracks]
-      .sort((a,b) => ratings[b.id] - ratings[a.id])
-      .slice(0, 5)
-      .map(t => t.id)
-      .filter(Boolean);
+    const LASTFM_KEY = '58fd138490dfe009592d827f5ae299f1';
+    const artistName = currentAlbum?.artists?.[0]?.name || '';
 
-    const data = await spFetch('/recommendations', {
-      seed_tracks: top5.join(','),
-      limit: 20
-    });
+    // Prendre les 3 meilleurs sons du classement
+    const top3 = [...tracks]
+      .sort((a,b) => ratings[b.id] - ratings[a.id])
+      .slice(0, 3);
+
+    // Pour chaque top son, récupérer des sons similaires via Last.fm
+    const seen = new Set();
+    const recommendations = [];
+
+    for (const track of top3) {
+      try {
+        const r = await fetch(
+          `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(artistName)}&track=${encodeURIComponent(track.name)}&api_key=${LASTFM_KEY}&limit=10&format=json`
+        );
+        const d = await r.json();
+        const similar = d.similartracks?.track || [];
+        for (const t of similar) {
+          const key = t.name.toLowerCase() + '|' + t.artist?.name?.toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            recommendations.push({ name: t.name, artist: t.artist?.name, url: t.url });
+          }
+        }
+      } catch(e) {}
+    }
 
     list.innerHTML = '';
-    if (!data.tracks?.length) {
-      list.innerHTML = '<div class="error-msg">Aucune recommandation trouvée.</div>';
+
+    if (!recommendations.length) {
+      list.innerHTML = '<div class="error-msg">Aucune recommandation trouvée pour ces sons.</div>';
       return;
     }
 
-    data.tracks.forEach((track, idx) => {
-      const cover = track.album?.images[0]?.url || '';
+    // Afficher les 20 premiers
+    recommendations.slice(0, 20).forEach((track, idx) => {
       const item = document.createElement('div');
       item.className = 'reco-card';
       item.style.animationDelay = (idx * .04) + 's';
       item.innerHTML = `
-        <img class="reco-cover" src="${cover}" alt="${track.name}">
         <div class="reco-info">
           <div class="reco-name">${track.name}</div>
-          <div class="reco-artist">${track.artists.map(a=>a.name).join(', ')} · ${track.album?.name}</div>
+          <div class="reco-artist">${track.artist}</div>
         </div>
-        <button class="reco-open" onclick="window.open('${track.external_urls?.spotify}', '_blank')">▶ Ouvrir</button>`;
+        <button class="reco-open" onclick="window.open('https://open.spotify.com/search/${encodeURIComponent(track.name + ' ' + track.artist)}', '_blank')">▶ Ouvrir</button>`;
       list.appendChild(item);
     });
 
