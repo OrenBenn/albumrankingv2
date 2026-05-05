@@ -911,21 +911,25 @@ document.getElementById('reco-btn').addEventListener('click', async () => {
   list.innerHTML = '<div class="loader"><span class="spinner"></span>Recherche de sons similaires...</div>';
 
   try {
-    const LASTFM_KEY = '58fd138490dfe009592d827f5ae299f1';
+    const artistId = currentAlbum?.artists?.[0]?.id;
     const artistName = currentAlbum?.artists?.[0]?.name || '';
+    let genres = [];
 
-    // 1. Chercher artistes similaires via Last.fm
-    const r = await fetch(
-      `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(artistName)}&api_key=${LASTFM_KEY}&limit=8&format=json`
-    );
-    const d = await r.json();
-    const similarArtists = d.similarartists?.artist || [];
+    // 1. Récupérer les genres de l'artiste depuis Spotify
+    if (artistId) {
+      try {
+        const artistData = await spFetch(`/artists/${artistId}`);
+        genres = artistData.genres || [];
+      } catch(e) {}
+    }
 
-    if (similarArtists.length) {
-      // Last.fm a trouvé → on récupère leurs top tracks Spotify
-      await showRecoFromArtists(similarArtists, list);
+    list.innerHTML = '';
+
+    if (genres.length) {
+      // 2a. On a des genres → chercher des sons de ces genres
+      await loadRecoFromGenres(genres, artistName, list);
     } else {
-      // Last.fm n'a rien → on propose de choisir un genre
+      // 2b. Pas de genres → proposer le sélecteur manuel
       showGenrePicker(list, artistName);
     }
 
@@ -937,18 +941,26 @@ document.getElementById('reco-btn').addEventListener('click', async () => {
   }
 });
 
-async function showRecoFromArtists(similarArtists, list) {
+async function loadRecoFromGenres(genres, artistName, list) {
   const seen = new Set();
   const recommendations = [];
 
-  for (const artist of similarArtists.slice(0, 6)) {
+  // Prendre les 3 premiers genres et chercher des sons pour chacun
+  for (const genre of genres.slice(0, 3)) {
     try {
-      const search = await spFetch('/search', { q: artist.name, type: 'artist', limit: 1 });
-      const spArtist = search.artists?.items?.[0];
-      if (!spArtist) continue;
-      const topTracks = await spFetch(`/artists/${spArtist.id}/top-tracks`);
-      for (const track of (topTracks.tracks || []).slice(0, 3)) {
-        const key = track.name.toLowerCase() + '|' + spArtist.name.toLowerCase();
+      const data = await spFetch('/search', {
+        q: `genre:"${genre}"`,
+        type: 'track',
+        limit: 15
+      });
+      for (const track of data.tracks?.items || []) {
+        // Exclure les sons du même artiste
+        const isCurrentArtist = track.artists.some(a =>
+          a.name.toLowerCase() === artistName.toLowerCase()
+        );
+        if (isCurrentArtist) continue;
+
+        const key = track.id;
         if (!seen.has(key)) {
           seen.add(key);
           recommendations.push({
@@ -962,13 +974,17 @@ async function showRecoFromArtists(similarArtists, list) {
     } catch(e) {}
   }
 
-  list.innerHTML = '';
   if (!recommendations.length) {
-    showGenrePicker(list, '');
+    showGenrePicker(list, artistName);
     return;
   }
 
+  // Mélanger
   recommendations.sort(() => Math.random() - 0.5);
+
+  // Afficher les genres trouvés
+  const genreLabel = genres.slice(0, 3).join(' · ');
+  list.innerHTML = `<p style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:16px;">Basé sur : ${genreLabel}</p>`;
   renderRecoCards(recommendations.slice(0, 20), list);
 }
 
